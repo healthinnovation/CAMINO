@@ -1,0 +1,310 @@
+---
+title: "Extracting multiple variables for the characterization of clustering"
+author: '<i class="bi bi-person-circle"></i> ambarja'
+format: html
+editor: visual
+toc: true
+theme:
+  light: flatly
+  dark: darkly
+mainfont: Roboto Slab
+toc-location: left
+date: now
+highlight:
+  style: "pygments"
+  languages:
+    r: "R"
+---
+
+## 1. Requeriments
+
+```{r}
+#| message: false
+#| warning: false
+library(rgee)
+library(sf)
+library(tidyverse)
+library(mapview)
+library(formattable)
+ee_Initialize(quiet = TRUE)
+```
+
+## 2. Reading the rawdata of villages
+
+```{r}
+#| message: false
+# CSV to sf object, after calculate a 5km of buffer by villages
+ccpp <- st_read('rawdata/comm_centroids.csv',quiet = TRUE) |>
+  st_as_sf(coords = c('long','lat'),crs = 4326) |> 
+  st_transform(32718) |> 
+  st_buffer(dist = 2.5*1000) |> 
+  st_transform(4326)
+```
+
+```{r}
+mapview(ccpp)
+```
+
+sf to featurecollection an object of Google Earth Engine
+```{r}
+#| message: false
+ccpp_ee <- ccpp |> sf_as_ee()
+```
+
+## 3. List of variables 
+
+```{r}
+#| message: false
+variables <- read_csv('rawdata/variables.csv',progress = FALSE,locale = locale(encoding = 'UTF-8'))
+DT::datatable(variables,options = list(pageLength = 4))
+```
+
+## 4. Dataset for extracting variables
+
+```{r}
+#| message: false
+ee_pp <- ee$ImageCollection$Dataset$IDAHO_EPSCOR_TERRACLIMATE |> 
+  ee$ImageCollection$select('pr')
+
+ee_ro <- ee$ImageCollection$Dataset$IDAHO_EPSCOR_TERRACLIMATE |> 
+  ee$ImageCollection$select('ro')
+
+ee_so <- ee$ImageCollection$Dataset$IDAHO_EPSCOR_TERRACLIMATE |> 
+  ee$ImageCollection$select('soil') 
+
+ee_tmx <- ee$ImageCollection$Dataset$IDAHO_EPSCOR_TERRACLIMATE |> 
+  ee$ImageCollection$select('tmmx')
+
+ee_tmn <- ee$ImageCollection$Dataset$IDAHO_EPSCOR_TERRACLIMATE |> 
+  ee$ImageCollection$select('tmmn')
+
+layer1_ghm <- ee$Image('projects/sat-io/open-datasets/GHS/GHS_POP/GHS_POP_E2010_GLOBE_R2023A_54009_100_V1_0')
+layer2_ghm <- ee$Image('projects/sat-io/open-datasets/GHS/GHS_POP/GHS_POP_E2020_GLOBE_R2023A_54009_100_V1_0')
+ee_ghm <- ee$ImageCollection(c(layer1_ghm,layer2_ghm))
+
+ee_etp <- ee$ImageCollection$Dataset$MODIS_006_MOD16A2 |> 
+  ee$ImageCollection$select('PET')
+
+ee_hum <- ee$ImageCollection$Dataset$NASA_FLDAS_NOAH01_C_GL_M_V001 |> 
+  ee$ImageCollection$select('Qair_f_tavg')
+
+ee_pop <- ee$ImageCollection$Dataset$WorldPop_GP_100m_pop |> 
+  ee$ImageCollection$select('population')
+
+lvc_1 <- ee$Image('UMD/hansen/global_forest_change_2022_v1_10') |> 
+  ee$Image$select('lossyear') |> 
+  ee$Image$eq(10)
+lvc_2 <- ee$Image('UMD/hansen/global_forest_change_2022_v1_10') |> 
+  ee$Image$select('lossyear') |> 
+  ee$Image$eq(21)
+ee_lvc <- ee$ImageCollection(c(lvc_1,lvc_2))
+
+ghl_1 <- ee$Image('users/ambarja/ghsl/2010')
+ghl_2 <- ee$Image('users/ambarja/ghsl/2020')
+ee_ghl <- ee$ImageCollection(list(ghl_1,ghl_2))
+
+ee_ngl <- ee$ImageCollection$Dataset$NOAA_VIIRS_DNB_MONTHLY_V1_VCMCFG |> 
+  ee$ImageCollection$select('avg_rad')
+```
+
+
+## 5. Selection of date range and creating a new function for extract
+
+Input: 
+- Start date : 2021
+- End date: 2010
+
+```{r}
+#| message: false
+start_date <- 2010
+end_date <- 2021
+start_date_alt <- 2012
+end_date_alt <- 2020
+ee_range <- ee$List(c(ee$Number(start_date),ee$Number(end_date)))
+ee_range_2 <- ee$List(c(ee$Number(start_date),ee$Number(end_date_alt)))
+ee_range_3 <- ee$List(c(ee$Number(start_date_alt),ee$Number(end_date)))
+```
+
+New functions 
+```{r}
+#| message: false
+pp_ee_reducer <- function(x){
+  ee_red_img = ee_pp$filter(ee$Filter$calendarRange(x,x,'year'))$mean()
+  return(ee_red_img)
+}
+
+ro_ee_reducer <- function(x){
+  ee_red_img = ee_ro$filter(ee$Filter$calendarRange(x,x,'year'))$mean()
+  return(ee_red_img)
+}
+
+so_ee_reducer <- function(x){
+  ee_red_img = ee_so$filter(ee$Filter$calendarRange(x,x,'year'))$mean()
+  return(ee_red_img)
+}
+
+tmx_ee_reducer <- function(x){
+  ee_red_img = ee_tmx$filter(ee$Filter$calendarRange(x,x,'year'))$mean()
+  return(ee_red_img)
+}
+
+tmn_ee_reducer <- function(x){
+  ee_red_img = ee_tmn$filter(ee$Filter$calendarRange(x,x,'year'))$mean()
+  return(ee_red_img)
+}
+
+etp_ee_reducer <- function(x){
+  ee_red_img = ee_etp$filter(ee$Filter$calendarRange(x,x,'year'))$mean()
+  return(ee_red_img)
+}
+
+hum_ee_reducer <- function(x){
+  ee_red_img = ee_hum$filter(ee$Filter$calendarRange(x,x,'year'))$mean()
+  return(ee_red_img)
+}
+
+pop_ee_reducer <- function(x){
+  ee_red_img = ee_pop$filter(ee$Filter$calendarRange(x,x,'year'))$mean()
+  return(ee_red_img)
+}
+
+lvc_ee_reducer <- ee_lvc$toBands()$multiply(ee$Image$pixelArea())$divide(1e+06)
+ghl_ee_reducer <- ee_ghl$toBands()$multiply(ee$Image$pixelArea())$divide(1e+06)
+
+ngl_ee_reducer <-  function(x){
+  ee_red_img = ee_ngl$filter(ee$Filter$calendarRange(x,x,'year'))$mean()
+  return(ee_red_img)
+}
+```
+
+### Precipitation data
+```{r}
+#| message: false
+ee_range$map(ee_utils_pyfunc(pp_ee_reducer)) |> 
+  ee$ImageCollection$toBands() |> 
+  ee$Image$rename('pp_2010','pp_2021') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$mean(),sf = FALSE,scale = 4638.3,quiet = TRUE) |> 
+  mutate(delta_pp = (pp_2021 - pp_2010)*100/pp_2010) -> pp
+```
+
+### Runoff data
+```{r}
+#| message: false
+ee_range$map(ee_utils_pyfunc(ro_ee_reducer)) |> 
+  ee$ImageCollection$toBands() |> 
+  ee$Image$rename('ro_2010','ro_2021') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$mean(),sf = FALSE,scale = 4638.3,quiet = TRUE) |> 
+  mutate(delta_ro = (ro_2021 - ro_2010)*100/ro_2010) -> ro
+```
+
+### Soil Moisture
+```{r}
+#| message: false
+ee_range$map(ee_utils_pyfunc(so_ee_reducer)) |> 
+  ee$ImageCollection$toBands() |> 
+  ee$Image$multiply(0.1) |> 
+  ee$Image$rename('so_2010','so_2021') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$mean(),sf = FALSE,scale = 4638.3,quiet = TRUE) |> 
+  mutate(delta_so = (so_2021 - so_2010)*100/so_2010) -> so
+```
+
+### Temperature Maximum
+```{r}
+#| message: false
+ee_range$map(ee_utils_pyfunc(tmx_ee_reducer)) |> 
+  ee$ImageCollection$toBands() |> 
+  ee$Image$multiply(0.1) |>
+  ee$Image$rename('tmx_2010','tmx_2021') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$mean(),sf = FALSE,scale = 4638.3,quiet = TRUE) |> 
+  mutate(delta_tmx = (tmx_2021 - tmx_2010)*100/tmx_2010) -> tmx
+```
+
+### Temperature Minimum
+```{r}
+#| message: false
+ee_range$map(ee_utils_pyfunc(tmn_ee_reducer)) |> 
+  ee$ImageCollection$toBands() |> 
+  ee$Image$multiply(0.1) |>
+  ee$Image$rename('tmn_2010','tmn_2021') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$mean(),sf = FALSE,scale = 4638.3,quiet = TRUE) |> 
+  mutate(delta_tmn = (tmn_2021 - tmn_2010)*100/tmn_2010) -> tmn
+```
+
+### Global Human Modification
+```{r}
+#| message: false
+ee_ghm |> 
+  ee$ImageCollection$toBands() |> 
+  ee$Image$rename('ghm_2010','ghm_2021') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$mean(),sf = FALSE,scale = 1000,quiet = TRUE) |> 
+  mutate(delta_ghm = (ghm_2021 - ghm_2010)*100/ghm_2010) -> ghm
+```
+
+### Evapotranspiration
+```{r}
+#| message: false
+ee_range$map(ee_utils_pyfunc(etp_ee_reducer)) |> 
+  ee$ImageCollection$toBands() |> 
+  ee$Image$multiply(0.1) |>
+  ee$Image$rename('etp_2010','etp_2021') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$mean(),sf = FALSE,scale = 500,quiet = TRUE) |> 
+  mutate(delta_etp = (etp_2021 - etp_2010)*100/etp_2010) -> etp
+```
+
+### Humidity
+```{r}
+#| message: false
+ee_range$map(ee_utils_pyfunc(hum_ee_reducer)) |> 
+  ee$ImageCollection$toBands() |> 
+  ee$Image$rename('hum_2010','hum_2021') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$mean(),sf = FALSE,scale = 11132,quiet = TRUE) |> 
+  mutate(delta_hum = (hum_2021 - hum_2010)*100/hum_2010) -> hum
+```
+
+### Population
+```{r}
+#| message: false
+ee_range_2$map(ee_utils_pyfunc(pop_ee_reducer)) |> 
+  ee$ImageCollection$toBands() |> 
+  ee$Image$rename('pop_2010','pop_2020') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$sum(),sf = FALSE,scale = 100,quiet = TRUE) |> 
+  mutate(delta_pop = (pop_2020 - pop_2010)*100/pop_2010) -> pop
+```
+
+### Loss vegetal cover
+```{r}
+#| message: false
+lvc_ee_reducer |> 
+  ee$Image$rename('lvc_2010','lvc_2021') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$sum(),sf = FALSE,scale = 30,quiet = TRUE) |> 
+  mutate(delta_lvc = (lvc_2021 - lvc_2010)*100/lvc_2010) -> lvc
+```
+
+### Global Human Layer
+```{r}
+#| message: false
+ghl_ee_reducer |> 
+  ee$Image$rename('ghl_2010','ghl_2020') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$sum(),sf = FALSE,scale = 100,quiet = TRUE) |> 
+  mutate(delta_ghl = (ghl_2020 - ghl_2010)*100/ghl_2010) -> ghl
+```
+
+### Night Lights
+```{r}
+#| message: false
+ee_range_3$map(ee_utils_pyfunc(ngl_ee_reducer)) |> 
+  ee$ImageCollection$toBands() |> 
+  ee$Image$rename('ngl_2012','ngl_2021') |> 
+  ee_extract(y = ccpp_ee,fun = ee$Reducer$mean(),sf = FALSE,scale = 463.83,quiet = TRUE) |> 
+  mutate(delta_ngl = (ngl_2021 - ngl_2012)*100/ngl_2012) -> ngl
+```
+
+## Final dataset
+
+```{r}
+sdb_variables <- bind_cols(pp,ro,so,tmx,tmn,ghm,etp,hum,pop,lvc,ghl,ngl)
+```
+
+
+
+

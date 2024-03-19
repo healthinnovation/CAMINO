@@ -1,0 +1,13 @@
+Variables,spatial resolution,spatial temporal,units,Source
+Precipitation,4638.3 meters,monthly,mm,TerraClim
+Runoff,4638.3 meters,monthly,mm,TerraClim
+Soil Moisture,4638.3 meters,monthly,mm,TerraClim
+Temperature maximum,4638.3 meters,monthly,C,TerraClim
+Temperature minimum,4638.3 meters,monthly,C,TerraClim
+Global Human Modification,1000 meters,years,-,Conservation Science Partners
+Evapotranspiration,500 meters,8 days,kg/m^2,NASA LP DAAC at the USGS EROS Center
+Humidity,11132 meters,daily,Mass fraction,NASA GES DISC at NASA Goddard Space Flight Center
+Population,100 meters,yearly,,WorldPop
+Loss vegetal cover,30  meters,yearly,km^2,Hansen/UMD/Google/USGS/NASA
+Global Human  Layer,100 meters,5 years,DN,European Commission
+Night Lights,463.83 meters,monthly,nanoWatts/sr/cm^2,"Earth Observation Group, Payne Institute for Public Policy, Colorado School of Mines"
