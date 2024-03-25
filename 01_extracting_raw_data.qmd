@@ -1,6 +1,6 @@
 ---
 title: "Extracting multiple variables for the characterization of clustering"
-author: '<i class="bi bi-person-circle"></i> ambarja'
+author: '<i class="bi bi-people-fill"></i> innovalab'
 format: html
 editor: visual
 toc: true
@@ -33,19 +33,23 @@ ee_Initialize(quiet = TRUE)
 
 ```{r}
 #| message: false
-# CSV to sf object, after calculate a 5km of buffer by villages
 ccpp <- st_read('rawdata/ccpp.gpkg',quiet = TRUE) 
+ccpp_buffer <- ccpp |> 
+  st_transform(crs = 32718) |> 
+  st_buffer(dist = 500) |> 
+  st_transform(crs = 4326)
 ```
 
 ```{r}
-mapview(ccpp)
+#| message: false
+mapview(ccpp,zcol='project',layer.name = 'Legend', lwd = 0.05)
 ```
 
 sf to featurecollection an object of Google Earth Engine
 
 ```{r}
 #| message: false
-ccpp_ee <- ccpp |> sf_as_ee()
+ccpp_ee <- ccpp_buffer |> select(ubigeo) |>  sf_as_ee()
 ```
 
 ## 3. List of variables
@@ -82,7 +86,7 @@ ee_ghm <- ee$ImageCollection(c(layer1_ghm,layer2_ghm))
 ee_etp <- ee$ImageCollection$Dataset$MODIS_006_MOD16A2 |> 
   ee$ImageCollection$select('PET')
 
-ee_hum <- ee$ImageCollection$Dataset$NASA_FLDAS_NOAH01_C_GL_M_V001 |> 
+ee_hum <- ee$ImageCollection('NASA/FLDAS/NOAH01/C/GL/M/V001') |> 
   ee$ImageCollection$select('Qair_f_tavg')
 
 ee_pop <- ee$ImageCollection$Dataset$WorldPop_GP_100m_pop |> 
@@ -112,8 +116,10 @@ Input: - Start date : 2021 - End date: 2010
 #| message: false
 start_date <- 2010
 end_date <- 2021
+
 start_date_alt <- 2012
 end_date_alt <- 2020
+
 ee_range <- ee$List(c(ee$Number(start_date),ee$Number(end_date)))
 ee_range_2 <- ee$List(c(ee$Number(start_date),ee$Number(end_date_alt)))
 ee_range_3 <- ee$List(c(ee$Number(start_date_alt),ee$Number(end_date)))
@@ -257,10 +263,21 @@ ee_range$map(ee_utils_pyfunc(etp_ee_reducer)) |>
 
 ```{r}
 #| message: false
+#| warning: false
+region <- ccpp_ee$geometry()
 ee_range$map(ee_utils_pyfunc(hum_ee_reducer)) |> 
   ee$ImageCollection$toBands() |> 
-  ee$Image$rename('hum_2010','hum_2021') |> 
-  ee_extract(y = ccpp_ee,fun = ee$Reducer$mean(),sf = FALSE,scale = 11132,quiet = TRUE) |> 
+  ee$Image$rename('hum_2010','hum_2021') |>
+  ee_as_rast(region = region$bounds(),scale = 11132,quiet = TRUE) -> hum_raster
+
+exactextractr::exact_extract(
+  x = hum_raster,
+  y = ccpp_buffer,
+  fun = 'mean',
+  append_cols = TRUE,
+  progress = FALSE) |> 
+  select(ubigeo,mean.hum_2010,mean.hum_2021) |> 
+  rename(hum_2010 = mean.hum_2010, hum_2021 = mean.hum_2021) |> 
   mutate(delta_hum = (hum_2021 - hum_2010)*100/hum_2010) -> hum
 ```
 
@@ -308,6 +325,7 @@ ee_range_3$map(ee_utils_pyfunc(ngl_ee_reducer)) |>
 
 ## 6. Malaria dataset
 ```{r}
+#| message: false
 rawdata_malaria <- readxl::read_xlsx(
   'rawdata/diseases_cases_2010_to_2024.xlsx',sheet = 1) |>
   janitor::clean_names() |> 
@@ -327,26 +345,45 @@ malaria_2010 <- rawdata_malaria |>
   group_by(ubigeo) |> 
   summarise(case_total_2010 = sum(case_total))
 
-malaria_2021 <- rawdata_malaria |> 
+malaria_2021 <- rawdata_malaria |>
+  filter(ano %in% 2021) |>  
   group_by(ubigeo) |> 
-  summarise(case_total_acc_2021 = sum(case_total))
+  summarise(case_total_2021 = sum(case_total))
 ```
 
 ```{r}
+#| message: false
 ccpp |> 
   left_join(y = malaria_2010,by = 'ubigeo') |> 
   left_join(y = malaria_2021,by = 'ubigeo') |> 
   mutate_at(vars(everything()), ~replace(., is.na(.), 0)) |> 
   mutate(
     malaria_2010 = case_total_2010/pob_censad,
-    malaria_2021 = case_total_acc_2021/pob_censad,
+    malaria_2021 = case_total_2021/pob_censad,
     delta_malaria = (malaria_2021 - malaria_2010)*100/pob_censad
   ) |> 
-  relocate(c(delta_malaria,malaria_2010,malaria_2021),.before = geom) -> db_diseases
+  st_drop_geometry() |> 
+  select(ubigeo,malaria_2010,malaria_2021) -> db_diseases
 ```
 
 ## 7. Final dataset
 
 ```{r}
-sdb_variables <- bind_cols(pp,ro,so,tmx,tmn,ghm,etp,hum,pop,lvc,ghl,ngl)
+#| message: false
+ccpp |> 
+  left_join(y = db_diseases,by = 'ubigeo') |> 
+  left_join(y = pp,by = 'ubigeo') |> 
+  left_join(y = ro,by = 'ubigeo') |> 
+  left_join(y = so,by = 'ubigeo') |> 
+  left_join(y = tmx,by = 'ubigeo') |> 
+  left_join(y = tmn,by = 'ubigeo') |> 
+  left_join(y = ghm,by = 'ubigeo') |> 
+  left_join(y = etp,by = 'ubigeo') |> 
+  left_join(y = hum,by = 'ubigeo') |> 
+  left_join(y = pop,by = 'ubigeo') |>
+  left_join(y = lvc,by = 'ubigeo') |>
+  left_join(y = ghl,by = 'ubigeo') |>
+  left_join(y = ngl,by = 'ubigeo') -> sdb_variables
+if(!dir.exists('output')){dir.create('output')}
+write_sf(sdb_variables,'output/db_variables.gpkg')
 ```
