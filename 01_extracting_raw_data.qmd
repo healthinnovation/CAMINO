@@ -34,11 +34,7 @@ ee_Initialize(quiet = TRUE)
 ```{r}
 #| message: false
 # CSV to sf object, after calculate a 5km of buffer by villages
-ccpp <- st_read('rawdata/comm_centroids.csv',quiet = TRUE) |>
-  st_as_sf(coords = c('long','lat'),crs = 4326) |> 
-  st_transform(32718) |> 
-  st_buffer(dist = 2.5*1000) |> 
-  st_transform(4326)
+ccpp <- st_read('rawdata/ccpp.gpkg',quiet = TRUE) 
 ```
 
 ```{r}
@@ -46,12 +42,13 @@ mapview(ccpp)
 ```
 
 sf to featurecollection an object of Google Earth Engine
+
 ```{r}
 #| message: false
 ccpp_ee <- ccpp |> sf_as_ee()
 ```
 
-## 3. List of variables 
+## 3. List of variables
 
 ```{r}
 #| message: false
@@ -107,12 +104,9 @@ ee_ngl <- ee$ImageCollection$Dataset$NOAA_VIIRS_DNB_MONTHLY_V1_VCMCFG |>
   ee$ImageCollection$select('avg_rad')
 ```
 
-
 ## 5. Selection of date range and creating a new function for extract
 
-Input: 
-- Start date : 2021
-- End date: 2010
+Input: - Start date : 2021 - End date: 2010
 
 ```{r}
 #| message: false
@@ -125,7 +119,8 @@ ee_range_2 <- ee$List(c(ee$Number(start_date),ee$Number(end_date_alt)))
 ee_range_3 <- ee$List(c(ee$Number(start_date_alt),ee$Number(end_date)))
 ```
 
-New functions 
+New functions
+
 ```{r}
 #| message: false
 pp_ee_reducer <- function(x){
@@ -177,7 +172,8 @@ ngl_ee_reducer <-  function(x){
 }
 ```
 
-### Precipitation data
+### 5.1 Precipitation data
+
 ```{r}
 #| message: false
 ee_range$map(ee_utils_pyfunc(pp_ee_reducer)) |> 
@@ -187,7 +183,8 @@ ee_range$map(ee_utils_pyfunc(pp_ee_reducer)) |>
   mutate(delta_pp = (pp_2021 - pp_2010)*100/pp_2010) -> pp
 ```
 
-### Runoff data
+### 5.2 Runoff data
+
 ```{r}
 #| message: false
 ee_range$map(ee_utils_pyfunc(ro_ee_reducer)) |> 
@@ -197,7 +194,8 @@ ee_range$map(ee_utils_pyfunc(ro_ee_reducer)) |>
   mutate(delta_ro = (ro_2021 - ro_2010)*100/ro_2010) -> ro
 ```
 
-### Soil Moisture
+### 5.3 Soil Moisture
+
 ```{r}
 #| message: false
 ee_range$map(ee_utils_pyfunc(so_ee_reducer)) |> 
@@ -208,7 +206,8 @@ ee_range$map(ee_utils_pyfunc(so_ee_reducer)) |>
   mutate(delta_so = (so_2021 - so_2010)*100/so_2010) -> so
 ```
 
-### Temperature Maximum
+### 5.4 Temperature Maximum
+
 ```{r}
 #| message: false
 ee_range$map(ee_utils_pyfunc(tmx_ee_reducer)) |> 
@@ -219,7 +218,8 @@ ee_range$map(ee_utils_pyfunc(tmx_ee_reducer)) |>
   mutate(delta_tmx = (tmx_2021 - tmx_2010)*100/tmx_2010) -> tmx
 ```
 
-### Temperature Minimum
+### 5.5 Temperature Minimum
+
 ```{r}
 #| message: false
 ee_range$map(ee_utils_pyfunc(tmn_ee_reducer)) |> 
@@ -230,7 +230,8 @@ ee_range$map(ee_utils_pyfunc(tmn_ee_reducer)) |>
   mutate(delta_tmn = (tmn_2021 - tmn_2010)*100/tmn_2010) -> tmn
 ```
 
-### Global Human Modification
+### 5.6 Global Human Modification
+
 ```{r}
 #| message: false
 ee_ghm |> 
@@ -240,7 +241,8 @@ ee_ghm |>
   mutate(delta_ghm = (ghm_2021 - ghm_2010)*100/ghm_2010) -> ghm
 ```
 
-### Evapotranspiration
+### 5.7 Evapotranspiration
+
 ```{r}
 #| message: false
 ee_range$map(ee_utils_pyfunc(etp_ee_reducer)) |> 
@@ -251,7 +253,8 @@ ee_range$map(ee_utils_pyfunc(etp_ee_reducer)) |>
   mutate(delta_etp = (etp_2021 - etp_2010)*100/etp_2010) -> etp
 ```
 
-### Humidity
+### 5.8 Humidity
+
 ```{r}
 #| message: false
 ee_range$map(ee_utils_pyfunc(hum_ee_reducer)) |> 
@@ -261,7 +264,8 @@ ee_range$map(ee_utils_pyfunc(hum_ee_reducer)) |>
   mutate(delta_hum = (hum_2021 - hum_2010)*100/hum_2010) -> hum
 ```
 
-### Population
+### 5.9 Population
+
 ```{r}
 #| message: false
 ee_range_2$map(ee_utils_pyfunc(pop_ee_reducer)) |> 
@@ -271,7 +275,8 @@ ee_range_2$map(ee_utils_pyfunc(pop_ee_reducer)) |>
   mutate(delta_pop = (pop_2020 - pop_2010)*100/pop_2010) -> pop
 ```
 
-### Loss vegetal cover
+### 5.10 Loss vegetal cover
+
 ```{r}
 #| message: false
 lvc_ee_reducer |> 
@@ -280,7 +285,8 @@ lvc_ee_reducer |>
   mutate(delta_lvc = (lvc_2021 - lvc_2010)*100/lvc_2010) -> lvc
 ```
 
-### Global Human Layer
+### 5.11 Global Human Layer
+
 ```{r}
 #| message: false
 ghl_ee_reducer |> 
@@ -289,7 +295,8 @@ ghl_ee_reducer |>
   mutate(delta_ghl = (ghl_2020 - ghl_2010)*100/ghl_2010) -> ghl
 ```
 
-### Night Lights
+### 5.12 Night Lights
+
 ```{r}
 #| message: false
 ee_range_3$map(ee_utils_pyfunc(ngl_ee_reducer)) |> 
@@ -299,12 +306,47 @@ ee_range_3$map(ee_utils_pyfunc(ngl_ee_reducer)) |>
   mutate(delta_ngl = (ngl_2021 - ngl_2012)*100/ngl_2012) -> ngl
 ```
 
-## Final dataset
+## 6. Malaria dataset
+```{r}
+rawdata_malaria <- readxl::read_xlsx(
+  'rawdata/diseases_cases_2010_to_2024.xlsx',sheet = 1) |>
+  janitor::clean_names() |> 
+  drop_na(ubigeo) |>
+  mutate(ncharact = nchar(ubigeo)) |> 
+  filter(ncharact == 10) |> 
+  group_by(ubigeo,localidad,distrito,provincia,ano,diagno) |> 
+  summarise(cases = n()) |> 
+  pivot_wider(names_from = diagno ,values_from = cases) |> 
+  janitor::clean_names() |> 
+  select(ubigeo:vivax) |> 
+  mutate_at(vars(everything()), ~replace(., is.na(.), 0)) |> 
+  mutate(case_total = falciparum + vivax)
+
+malaria_2010 <- rawdata_malaria |> 
+  filter(ano %in% 2010) |>  
+  group_by(ubigeo) |> 
+  summarise(case_total_2010 = sum(case_total))
+
+malaria_2021 <- rawdata_malaria |> 
+  group_by(ubigeo) |> 
+  summarise(case_total_acc_2021 = sum(case_total))
+```
+
+```{r}
+ccpp |> 
+  left_join(y = malaria_2010,by = 'ubigeo') |> 
+  left_join(y = malaria_2021,by = 'ubigeo') |> 
+  mutate_at(vars(everything()), ~replace(., is.na(.), 0)) |> 
+  mutate(
+    malaria_2010 = case_total_2010/pob_censad,
+    malaria_2021 = case_total_acc_2021/pob_censad,
+    delta_malaria = (malaria_2021 - malaria_2010)*100/pob_censad
+  ) |> 
+  relocate(c(delta_malaria,malaria_2010,malaria_2021),.before = geom) -> db_diseases
+```
+
+## 7. Final dataset
 
 ```{r}
 sdb_variables <- bind_cols(pp,ro,so,tmx,tmn,ghm,etp,hum,pop,lvc,ghl,ngl)
 ```
-
-
-
-
