@@ -2,3 +2,7 @@
 *.html
 01_extracting_raw_data_files/*
 **/*.xlsx
+
+# renv
+renv/
+.Rprofile

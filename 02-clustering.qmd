@@ -1,0 +1,338 @@
+---
+title: "Clustering"
+number-sections: true
+format: html
+editor: source
+---
+
+```{r}
+#| warning: false
+#| message: false
+library(dplyr)
+library(factoextra)
+library(cluster)
+library(leaflet)
+```
+
+```{r}
+# Read dataset
+ccpp_sf_raw <- sf::read_sf("output/db_variables.gpkg")
+ccpp_sf <- ccpp_sf_raw |> 
+  tidyr::drop_na() |> 
+  filter(if_all(-geom, \(x) !is.infinite(x)))
+ccpp <- ccpp_sf |> 
+  sf::st_drop_geometry()
+```
+
+```{r}
+# Select variables for analysis
+variables <- ccpp |> 
+  select(malaria_2010:delta_ngl) 
+```
+
+```{r}
+# Function to scale data either by standardization or normalization
+scale_data <- function(data, method) {
+  if (method == "standardization") {
+    data_scaled = mutate(data, across(everything(), ~as.numeric(scale(.x))))
+  } 
+  if (method == "normalization") {
+    data_scaled = mutate(data, across(everything(), scales::rescale))
+  }
+  data_scaled
+}
+```
+
+```{r}
+# Listing the configurations for the scaling, distance and linkage methods
+scaling_method <- c("standardization", "normalization")
+dist_method <- c("euclidean", "pearson", "spearman")
+linkage_method <- c("average", "single", "complete", "ward", "weighted")
+```
+
+```{r}
+# Table with all the combinations
+design <- tidyr::expand_grid(scaling_method, dist_method, linkage_method, variables)
+```
+
+```{r}
+# Calculate the agglomerative coefficient for each combination
+agglomerative_coeff <- design |> 
+  tidyr::nest(data = -c(scaling_method, dist_method, linkage_method)) |> 
+  mutate(
+    scaling = purrr::map2(data, scaling_method, ~scale_data(.x, method = .y)),
+    dist_mat = purrr::map2(
+      scaling, dist_method, ~get_dist(.x, method = .y, diag = TRUE, upper = TRUE)
+    ),
+    tree = purrr::map2(dist_mat, linkage_method, ~agnes(.x, method = .y)),
+    ac = purrr::map(tree, ~.x$ac)
+  ) |> 
+  tidyr::unnest(ac) |> 
+  arrange(-ac)
+```
+
+```{r}
+agglomerative_coeff
+```
+
+```{r}
+# Function to plot a dendogram
+dendogram <- function(row, title) {
+  dendogram <- fviz_dend(agglomerative_coeff$tree[[row]], main = title) + 
+    theme(text = element_text(size = 13))
+  dendogram
+}
+```
+
+::: panel-tabset
+##### HC structure 1
+
+```{r}
+#| warning: false
+#| message: false
+dendogram(1, "Normalization, Pearson correlation, Ward linkage")
+```
+
+##### HC structure 2
+
+```{r}
+#| warning: false
+#| message: false
+
+dendogram(2, "Standardization, Spearman correlation, Ward linkage")
+```
+
+##### HC structure 3
+
+```{r}
+#| warning: false
+#| message: false
+
+dendogram(3, "Standardization, Pearson correlation, Ward linkage")
+```
+:::
+
+### Determining the number of clusters
+
+#### Evaluation of the criteria of the optimal number of clusters
+
+```{r}
+# Function to plot optimal number of clusters plot for a certain criteria
+nbclust_plot  <- function(data, method, ...) {
+  nbclust <- fviz_nbclust(
+    data, hcut, hc_func = "agnes", hc_method = "ward.D2", 
+    c_metric = "pearson", method = method, ...
+  ) + theme(text = element_text(size = 13))
+  nbclust
+}
+
+# Scale variables using standardization
+# variables_scaled = mutate(variables, across(everything(), ~as.numeric(scale(.x))))
+variables_scaled <- agglomerative_coeff$scaling[[1]]
+```
+
+::: panel-tabset
+##### Average silhouette width
+
+```{r}
+set.seed(2022)
+nbclust_plot(variables_scaled, "silhouette")
+```
+
+##### Total within sum of squares
+
+```{r}
+nbclust_plot(variables_scaled, "wss")
+```
+
+##### Gap statistic
+
+```{r}
+set.seed(2022)
+nbclust_plot(variables_scaled, "gap_stat", verbose = FALSE)
+```
+:::
+
+```{r}
+# NbClust::NbClust(agglomerative_coeff$dist_mat[[1]], method = "ward.D2")
+```
+
+
+#### Clusters plots {#clusters-plots}
+
+Next, we plotted the clusters in a plane using PCA for 4 and 5 clusters.
+
+```{r}
+# Function to cut tree
+cut_tree <- function(data, k) {
+  tree = hcut(
+    data, k = k, hc_func = "agnes", hc_method = "ward.D2", 
+    hc_metric = "spearman", graph = TRUE
+  )
+  tree
+}
+
+# Function to generate cluster plot
+cluster_plot <- function(tree) {
+  cluster = fviz_cluster(tree, ggtheme = theme_classic()) +
+    geom_vline(xintercept = 0, linetype = "dashed") +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    theme(text = element_text(size = 13))
+  
+  cluster
+}
+```
+
+::: panel-tabset
+##### 3 clusters
+
+```{r}
+tree_3 <- cut_tree(variables_scaled, 3)
+cluster_plot(tree_3)
+```
+
+
+##### 4 clusters
+
+```{r}
+tree_4 <- cut_tree(variables_scaled, 4)
+cluster_plot(tree_4)
+```
+
+##### 5 clusters
+
+```{r}
+tree_5 <- cut_tree(variables_scaled, 5)
+cluster_plot(tree_5)
+```
+:::
+
+#### Individual silhouette widths
+
+Next, we plotted the individual silhouette width for the observations grouped 4 and 5 clusters.
+
+```{r}
+# Function to plot individual silhouette widths
+silhouette_plot <- function(tree) {
+  ind_silhouette <- tree |>
+    fviz_silhouette(ggtheme = theme_classic(), print.summary = FALSE) +
+    theme(text = element_text(size = 13))
+  
+  ind_silhouette
+}
+```
+
+::: panel-tabset
+##### 3 clusters
+
+```{r}
+silhouette_plot(tree_3)
+```
+
+##### 4 clusters
+
+```{r}
+silhouette_plot(tree_4)
+```
+
+##### 5 clusters
+
+```{r}
+silhouette_plot(tree_5)
+```
+:::
+
+We see that with 5 clusters we obtain a greater average silhouette width (0.44) than with 4 clusters (0.41). However, with 5 clusters with get greater negative values for some populated centers, indicating that they may be misclustered.
+
+#### HC groups on maps
+
+As an additional step, for each number of clusters, we plotted the population centers (polygon centroids) on a map to see their spatial distribution.
+
+```{r}
+# Create table with the groups
+ccpp_sf_clusters <- ccpp_sf |> 
+  mutate(
+    hc_group_4 = as.factor(tree_4$cluster),
+    hc_group_5 = as.factor(tree_5$cluster),
+    hc_group_3 = as.factor(tree_3$cluster)
+  )
+
+# Function to plot a map with the clusters
+cluster_map <- function(data, palette, group_var) {
+  values = pull(data, {{group_var}})
+  
+  map = data |> 
+    sf::st_as_sf(coords = c("lng", "lat"), crs = 4326) |>
+    leaflet() |> 
+    addTiles(group = "OpenStreetMap") |> 
+    addProviderTiles(provider = providers$CartoDB, group = "CartoDB") |>
+    addProviderTiles(
+      provider = providers$Esri.WorldImagery, group = "Satelital"
+    ) |>
+    addCircleMarkers(
+      popup = ccpp$population_center, color = ~palette(values),
+      opacity = 1, radius = 0.1, fillOpacity = 0.5
+    )|>
+    addLayersControl(
+      baseGroups = c("CartoDB", "OpenStreetMap", "Satelital")
+    ) |>
+    addLegend(
+      title = "Cluster", pal = palette, values = values, opacity = 1,
+      position = "bottomright"
+      )
+  map
+}
+```
+
+::: panel-tabset
+##### 3 clusters
+
+```{r}
+#| warning: false
+#| message: false
+
+# Palette for 4 clusters
+palette_hc_3 <- colorFactor(
+  palette = "viridis", domain = ccpp_sf_clusters$hc_group_3
+)
+
+# Plot cluster map
+cluster_map(ccpp_sf_clusters, palette_hc_3, hc_group_3)
+```
+
+##### 4 clusters
+
+```{r}
+#| warning: false
+#| message: false
+
+# Palette for 4 clusters
+palette_hc_4 <- colorFactor(
+  palette = "viridis", domain = ccpp_sf_clusters$hc_group_4
+)
+
+# Plot cluster map
+cluster_map(ccpp_sf_clusters, palette_hc_4, hc_group_4)
+```
+
+##### 5 clusters
+
+```{r}
+#| warning: false
+#| message: false
+
+# Palette for 5 clusters
+palette_hc_5 <- colorFactor(
+  palette = "viridis", domain = ccpp_sf_clusters$hc_group_5
+)
+
+# Plot cluster map
+cluster_map(ccpp_sf_clusters, palette_hc_5, hc_group_5)
+```
+:::
+
+```{r}
+sf::st_write(ccpp_sf_clusters, "output/ccpp_clusters.gpkg")
+```
+
+
