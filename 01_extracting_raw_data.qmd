@@ -36,7 +36,7 @@ ee_Initialize(quiet = TRUE)
 ccpp <- st_read('rawdata/ccpp.gpkg',quiet = TRUE) 
 ccpp_buffer <- ccpp |> 
   st_transform(crs = 32718) |> 
-  st_buffer(dist = 500) |> 
+  st_buffer(dist = 3500) |> 
   st_transform(crs = 4326)
 ```
 
